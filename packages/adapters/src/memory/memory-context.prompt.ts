@@ -34,13 +34,7 @@ export function buildAgentMemoryPrompt(
   };
   if (input.length === 0) return { plan };
 
-  const documents = [...input].sort(
-    (left, right) =>
-      memoryTimestamp(right.updatedAt) - memoryTimestamp(left.updatedAt) ||
-      right.revision - left.revision ||
-      left.scope.localeCompare(right.scope) ||
-      left.path.localeCompare(right.path),
-  );
+  const documents = [...input].sort(compareMemoryDocuments);
 
   const fixedBytes = byteLength(PREAMBLE) + byteLength(CLOSING);
   if (maxBytes <= fixedBytes) {
@@ -111,7 +105,29 @@ function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
   };
 }
 
-function memoryTimestamp(updatedAt: string | undefined): number {
-  const timestamp = Date.parse(updatedAt ?? "");
-  return Number.isFinite(timestamp) ? timestamp : 0;
+/**
+ * A bot's own memory outranks shared memory: however often shared documents
+ * change, the bot still sees its private notes, so they can never be evicted
+ * by a wave of shared edits. Within a scope the order is fixed — the memory
+ * index first, then the remaining paths alphabetically — so editing one
+ * document never reshuffles which documents any agent sees. When the same
+ * path appears twice the higher revision wins; update recency is deliberately
+ * not a criterion, because it made every agent's context depend on which
+ * shared document happened to be touched last.
+ */
+function compareMemoryDocuments(left: MemoryPromptDocument, right: MemoryPromptDocument): number {
+  return (
+    scopeRank(left) - scopeRank(right) ||
+    indexRank(left) - indexRank(right) ||
+    left.path.localeCompare(right.path) ||
+    right.revision - left.revision
+  );
+}
+
+function scopeRank(document: MemoryPromptDocument): number {
+  return document.scope === "bot" ? 0 : 1;
+}
+
+function indexRank(document: MemoryPromptDocument): number {
+  return document.path === MEMORY_INDEX_PATH ? 0 : 1;
 }
