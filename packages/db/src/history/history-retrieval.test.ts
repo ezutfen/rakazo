@@ -234,6 +234,25 @@ describe("local history retrieval", () => {
     expect(sql(mock).sql).not.toContain('"userId" =');
     expect(sql(mock).sql).toContain('t."botId" =');
   });
+  it("keeps a ticket continuation in run history when its source is lineage in another chat", async () => {
+    // A woken assignee's run lives in its own thread while its source message —
+    // the hop lineage a ticket answer carries — sits in the answering bot's
+    // chat. The run's own reply anchors it here, so its metadata, outcomes and
+    // artifacts stay in this thread's history instead of vanishing.
+    const { mock, prisma } = db();
+    mock.$queryRaw
+      .mockResolvedValueOnce([row(4)])
+      .mockResolvedValueOnce([{ ...row(3), role: "bot", runId: "run-ticket" }]);
+    await readHistory(prisma, scope, { messageId: "message-4" });
+    expect(mock.run.findMany).toHaveBeenCalled();
+    const where = mock.run.findMany.mock.calls[0]![0].where as {
+      AND: Array<{ OR: Array<Record<string, unknown>> }>;
+    };
+    expect(where.AND[0]!.OR).toContainEqual({
+      trigger: "tickets",
+      id: { in: ["run-ticket"] },
+    });
+  });
   it("reuses originals without inference and invalidates snapshots when content changes", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValueOnce([row(1)]).mockResolvedValueOnce([row(1)]);

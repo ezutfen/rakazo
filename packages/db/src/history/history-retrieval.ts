@@ -680,6 +680,10 @@ export async function readHistory(
                 OR: [
                   { sourceMessage: { threadId: scope.threadId } },
                   { sourceMessageId: null, id: { in: anchoredRunIds } },
+                  // A ticket continuation's source message is hop lineage in another
+                  // bot's chat, not this thread's origin; its own reply above, which
+                  // anchored it, is what ties it to this thread's history.
+                  { trigger: "tickets", id: { in: anchoredRunIds } },
                 ],
               },
             ],
